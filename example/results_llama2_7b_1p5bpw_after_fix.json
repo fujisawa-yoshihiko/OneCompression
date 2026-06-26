@@ -1,0 +1,46 @@
+{
+  "experiment": "after_fix",
+  "model": "Llama-2-7b-hf",
+  "target_bits": 1.5,
+  "l": 8,
+  "P": 1,
+  "hessian_fix": true,
+  "scale_bits": 16,
+  "ppl_wikitext2": 11.72137758986478,
+  "acc": {
+    "arc_easy": {
+      "alias": "arc_easy",
+      "acc,none": 0.43223905723905726,
+      "acc_stderr,none": 0.010165130379698673,
+      "acc_norm,none": 0.4158249158249158,
+      "acc_norm_stderr,none": 0.01011334824464792
+    },
+    "piqa": {
+      "alias": "piqa",
+      "acc,none": 0.6082698585418934,
+      "acc_stderr,none": 0.011389038597720108,
+      "acc_norm,none": 0.5870511425462459,
+      "acc_norm_stderr,none": 0.011487658725078972
+    }
+  },
+  "generations": [
+    {
+      "prompt": "The future of artificial intelligence",
+      "generated": "The future of artificial intelligence is a matter of the future of artificial intelligence.\nThe future of artificial intelligence is a matter of the future of artificial intelligence.\nThe future of artificial intelligence is a matter of the future of artificial intelligence.\nThe future of artificial intelligence is a matter of the future of artificial intelligence.\nThe future of artificial intelligence is a matter of the future of artificial intelligence.\nThe future of artificial intelligence is a matter of the future of artificial intelligence.\nThe future of artificial intelligence is a matter of the future of artificial intelligence.\nThe future of artificial intelligence is a matter of the future of artificial intelligence.\nThe future of artificial intelligence"
+    },
+    {
+      "prompt": "Hello, how are you today?",
+      "generated": "Hello, how are you today? I have a lot of friends, and they are very good.\n I have a lot of friends, and they are very good.\n I have a lot of friends, and they are very good.\n I have a lot of friends, and they are very good.\n I have a lot of friends, and they are very good.\n I have a lot of friends, and they are very good.\n I have a lot of friends, and they are very good.\n I have a lot of friends, and they are very good.\n I have a lot of friends, and they are very good.\n I have"
+    },
+    {
+      "prompt": "Write a bubble sort algorithm in Python.",
+      "generated": "Write a bubble sort algorithm in Python.\n\n###\n\n###\n\n###\n\n###\n\n###\n\n###\n\n###\n\n###\n\n###\n\n###\n\n###\n\n###\n\n###\n\n###\n\n###\n\n###\n\n###\n\n###\n\n###\n\n###\n\n###\n\n###\n\n###\n\n###\n\n###\n\n###\n\n###\n\n###\n\n###\n\n###\n\n###\n\n###"
+    },
+    {
+      "prompt": "Let's schedule a meeting for next week.",
+      "generated": "Let's schedule a meeting for next week.\n\n### 2016\n\nThe 2016 season was the 10th season of the league. The league was expanded to 12 teams, with the 12th team being the 2016–17 season. The league was expanded to 12 teams in 2016. The league was expanded to 12 teams in 2016. The league was expanded to 12 teams in 2016. The league was expanded to 12 teams in 2016. The league was expanded to "
+    }
+  ],
+  "quant_elapsed_sec": 37850.3,
+  "elapsed_sec": 38047.3
+}

@@ -1,0 +1,27 @@
+{
+  "experiment": "hessian_only_fix",
+  "target_bits": 1.0,
+  "l": 8,
+  "P": 1,
+  "hessian_fix": true,
+  "scale_bits": 0,
+  "actual_bpw_approx": 1.1875,
+  "ppl_wikitext2": 39.205428853487284,
+  "acc": {
+    "arc_easy": {
+      "alias": "arc_easy",
+      "acc,none": 0.28914141414141414,
+      "acc_stderr,none": 0.009302827114597558,
+      "acc_norm,none": 0.2828282828282828,
+      "acc_norm_stderr,none": 0.009241472775328163
+    },
+    "piqa": {
+      "alias": "piqa",
+      "acc,none": 0.5408052230685527,
+      "acc_stderr,none": 0.011626910523588394,
+      "acc_norm,none": 0.5369967355821545,
+      "acc_norm_stderr,none": 0.011633844942776493
+    }
+  },
+  "elapsed_sec": 3641.3
+}

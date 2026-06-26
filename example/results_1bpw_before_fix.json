@@ -1,0 +1,27 @@
+{
+  "experiment": "before_fix",
+  "commit": "6dd3bc2 (behavior reproduced)",
+  "target_bits": 1.0,
+  "l": 8,
+  "P": 1,
+  "hessian_fix": false,
+  "scale_bits": 0,
+  "ppl_wikitext2": 39.344646984876334,
+  "acc": {
+    "arc_easy": {
+      "alias": "arc_easy",
+      "acc,none": 0.29208754208754206,
+      "acc_stderr,none": 0.009330705616569084,
+      "acc_norm,none": 0.2878787878787879,
+      "acc_norm_stderr,none": 0.009290733161670239
+    },
+    "piqa": {
+      "alias": "piqa",
+      "acc,none": 0.5527747551686616,
+      "acc_stderr,none": 0.011600659443293037,
+      "acc_norm,none": 0.5217627856365615,
+      "acc_norm_stderr,none": 0.011654768618559977
+    }
+  },
+  "elapsed_sec": 3648.4
+}

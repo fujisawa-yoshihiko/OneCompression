@@ -1,0 +1,46 @@
+{
+  "experiment": "after_fix",
+  "model": "google/gemma-4-E2B",
+  "target_bits": 1.5,
+  "l": 8,
+  "P": 1,
+  "hessian_fix": true,
+  "scale_bits": 16,
+  "ppl_wikitext2": 369.8747781769836,
+  "acc": {
+    "arc_easy": {
+      "alias": "arc_easy",
+      "acc,none": 0.3085016835016835,
+      "acc_stderr,none": 0.009477472342978388,
+      "acc_norm,none": 0.3005050505050505,
+      "acc_norm_stderr,none": 0.009407763090599448
+    },
+    "piqa": {
+      "alias": "piqa",
+      "acc,none": 0.5397170837867247,
+      "acc_stderr,none": 0.011628961491718543,
+      "acc_norm,none": 0.5310119695321001,
+      "acc_norm_stderr,none": 0.011643363511107561
+    }
+  },
+  "generations": [
+    {
+      "prompt": "The future of artificial intelligence",
+      "generated": "The future of artificial intelligence The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The"
+    },
+    {
+      "prompt": "Hello, how are you today?",
+      "generated": "Hello, how are you today?"
+    },
+    {
+      "prompt": "Write a bubble sort algorithm in Python.",
+      "generated": "Write a bubble sort algorithm in Python. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . ."
+    },
+    {
+      "prompt": "Let's schedule a meeting for next week.",
+      "generated": "Let's schedule a meeting for next week. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . ."
+    }
+  ],
+  "quant_elapsed_sec": 10428.8,
+  "elapsed_sec": 10680.9
+}

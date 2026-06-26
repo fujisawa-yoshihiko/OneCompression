@@ -1,0 +1,47 @@
+{
+  "experiment": "2bpw_no_perlayer",
+  "model": "google/gemma-4-E2B",
+  "target_bits": 2.0,
+  "l": 8,
+  "P": 1,
+  "hessian_fix": true,
+  "scale_bits": 16,
+  "ablation": "per_layer_* kept FP16",
+  "ppl_wikitext2": 325.32345326160714,
+  "acc": {
+    "arc_easy": {
+      "alias": "arc_easy",
+      "acc,none": 0.3324915824915825,
+      "acc_stderr,none": 0.009666892606130106,
+      "acc_norm,none": 0.3244949494949495,
+      "acc_norm_stderr,none": 0.009606970654515608
+    },
+    "piqa": {
+      "alias": "piqa",
+      "acc,none": 0.544613710554951,
+      "acc_stderr,none": 0.011619292444156876,
+      "acc_norm,none": 0.530467899891186,
+      "acc_norm_stderr,none": 0.011644145418355097
+    }
+  },
+  "generations": [
+    {
+      "prompt": "The future of artificial intelligence",
+      "generated": "The future of artificial intelligence The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The The"
+    },
+    {
+      "prompt": "Hello, how are you today?",
+      "generated": "Hello, how are you today?"
+    },
+    {
+      "prompt": "Write a bubble sort algorithm in Python.",
+      "generated": "Write a bubble sort algorithm in Python.\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+    },
+    {
+      "prompt": "Let's schedule a meeting for next week.",
+      "generated": "Let's schedule a meeting for next week.\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+    }
+  ],
+  "quant_elapsed_sec": 9867.0,
+  "elapsed_sec": 10071.6
+}

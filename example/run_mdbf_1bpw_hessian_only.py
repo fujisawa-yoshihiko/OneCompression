@@ -1,0 +1,157 @@
+#!/usr/bin/env python3
+"""Experiment ③: MDBF 1bpw - Hessianのみ修正 (scale_bits=0のまま).
+
+  - W_tilde = W @ Q @ diag(sqrt(λ)) @ Q^T  [FIXED]
+  - scale_bits = 0  [NOT fixed, hardcoded to 0]
+  → 実際BPW ≈ 1.1875 (修正前と同じBPW条件でHessianのみ比較)
+
+GPU: cuda:2
+"""
+from __future__ import annotations
+
+import json
+import logging
+import sys
+import time
+from pathlib import Path
+
+import torch
+
+# -----------------------------------------------------------------------
+# モンキーパッチ: scale_bitsのみ旧挙動(0)に戻す。Hessianは修正済みを使う。
+# -----------------------------------------------------------------------
+import onecomp.quantizer.mdbf.utils as _utils_mod
+import onecomp.quantizer.mdbf.mdbf_layer as _layer_mod
+
+import math
+
+def _rank_from_bpw_scale0(n, m, b_target, l=1, P=2, min_rank=1, rounding="floor", scale_bits=0):
+    """scale_bits=0 固定（修正前の挙動）"""
+    scale_bits = 0
+    numerator = (b_target * n * m / P) - scale_bits * l * (n + m)
+    denominator = (n + m) + 2 * scale_bits * l
+    r_real = numerator / denominator
+    max_rank = min(n, m)
+    if rounding == "floor":
+        r = int(math.floor(r_real))
+    elif rounding == "ceil":
+        r = int(math.ceil(r_real))
+    else:
+        r = int(round(r_real))
+    return max(min_rank, min(r, max_rank))
+
+_utils_mod.rank_from_bpw = _rank_from_bpw_scale0
+_layer_mod.rank_from_bpw = _rank_from_bpw_scale0
+# -----------------------------------------------------------------------
+
+from onecomp import CalibrationConfig, ModelConfig, QEPConfig, Runner
+from onecomp.quantizer.mdbf import MDBF
+
+MODEL_PATH = "/data3/yoshida/qep-dev/models/TinyLlama-1.1B-Chat-v1.0"
+DEVICE = "cuda:2"
+TARGET_BITS = 1.0
+L = 8
+P = 1
+OUTPUT_FILE = Path(__file__).parent / "results_1bpw_hessian_only.json"
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+
+
+def _build_exclude_keywords(num_layers: int, first_n: int = 4, last_n: int = 4) -> list[str]:
+    skip = set(range(first_n)) | set(range(num_layers - last_n, num_layers))
+    return [f"model.layers.{i}." for i in sorted(skip)]
+
+
+def main() -> int:
+    print("=" * 80)
+    print("MDBF 1bpw - ③ Hessianのみ修正 (scale_bits=0のまま)")
+    print(f"  W_tilde = W @ Q @ diag(sqrt(λ)) @ Q^T  [FIXED]")
+    print(f"  scale_bits = 0  [NOT fixed]  → 実際BPW≈1.1875")
+    print(f"  target_bits = {TARGET_BITS}, l={L}, P={P}")
+    print(f"  device: {DEVICE}")
+    print("=" * 80)
+
+    model_config = ModelConfig(path=MODEL_PATH, device=DEVICE)
+    num_layers = model_config.load_config().num_hidden_layers
+    exclude_keywords = _build_exclude_keywords(num_layers)
+
+    quantizer = MDBF(
+        target_bits=TARGET_BITS,
+        l=L,
+        P=P,
+        svd_mode="svd",
+        use_admm=True,
+        admm_iters=1000,
+        admm_inner_iters=3,
+        admm_reg=0.03,
+        use_gradient_refine=True,
+        gradient_iters=1500,
+        gradient_lr=0.01,
+        activation_aware=True,
+        act_init="osvd",
+        exclude_layer_keywords=exclude_keywords,
+    )
+
+    calibration_config = CalibrationConfig(
+        calibration_dataset="wikitext2",
+        num_calibration_samples=128,
+        max_length=2048,
+        seed=0,
+    )
+
+    qep_config = QEPConfig(percdamp=0.01, perccorr=0.5, device=DEVICE)
+
+    runner = Runner(
+        model_config=model_config,
+        quantizer=quantizer,
+        calibration_config=calibration_config,
+        qep=True,
+        qep_config=qep_config,
+    )
+
+    t0 = time.time()
+    runner.run()
+    elapsed = time.time() - t0
+
+    _, dequant_ppl, _ = runner.calculate_perplexity(
+        original_model=False,
+        dequantized_model=True,
+        quantized_model=False,
+        dataset_name="wikitext",
+        dataset_config="wikitext-2-raw-v1",
+    )
+    _, dequant_acc, _ = runner.calculate_accuracy(
+        original_model=False,
+        dequantized_model=True,
+        quantized_model=False,
+        tasks=["arc_easy", "piqa"],
+        num_fewshot=0,
+    )
+
+    result = {
+        "experiment": "hessian_only_fix",
+        "target_bits": TARGET_BITS,
+        "l": L,
+        "P": P,
+        "hessian_fix": True,
+        "scale_bits": 0,
+        "actual_bpw_approx": 1.1875,
+        "ppl_wikitext2": dequant_ppl,
+        "acc": dequant_acc,
+        "elapsed_sec": round(elapsed, 1),
+    }
+
+    print("\n" + "=" * 80)
+    print("[RESULT] ③ hessian_only_fix")
+    print(f"  PPL (wikitext2): {dequant_ppl}")
+    print(f"  ACC (arc_easy, piqa): {dequant_acc}")
+    print(f"  Elapsed: {elapsed:.0f}s")
+    print("=" * 80)
+
+    OUTPUT_FILE.write_text(json.dumps(result, indent=2, ensure_ascii=False))
+    print(f"\nSaved to: {OUTPUT_FILE}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,28 @@
+{
+  "experiment": "hessian_only_fix",
+  "model": "Llama-2-7b-hf",
+  "target_bits": 1.0,
+  "l": 8,
+  "P": 1,
+  "hessian_fix": true,
+  "scale_bits": 0,
+  "actual_bpw_approx": 1.094,
+  "ppl_wikitext2": 20.616361244144667,
+  "acc": {
+    "arc_easy": {
+      "alias": "arc_easy",
+      "acc,none": 0.3282828282828283,
+      "acc_stderr,none": 0.009635749509262078,
+      "acc_norm,none": 0.3223905723905724,
+      "acc_norm_stderr,none": 0.009590672908157372
+    },
+    "piqa": {
+      "alias": "piqa",
+      "acc,none": 0.5603917301414582,
+      "acc_stderr,none": 0.011580417248656388,
+      "acc_norm,none": 0.5402611534276387,
+      "acc_norm_stderr,none": 0.011627942981817204
+    }
+  },
+  "elapsed_sec": 24993.0
+}

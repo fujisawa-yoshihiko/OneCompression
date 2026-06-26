@@ -1,0 +1,46 @@
+{
+  "experiment": "after_fix",
+  "model": "google/gemma-4-E4B",
+  "target_bits": 1.5,
+  "l": 8,
+  "P": 1,
+  "hessian_fix": true,
+  "scale_bits": 16,
+  "ppl_wikitext2": 1259.1251074032148,
+  "acc": {
+    "arc_easy": {
+      "alias": "arc_easy",
+      "acc,none": 0.2962962962962963,
+      "acc_stderr,none": 0.009369711585684086,
+      "acc_norm,none": 0.2967171717171717,
+      "acc_norm_stderr,none": 0.009373559492986735
+    },
+    "piqa": {
+      "alias": "piqa",
+      "acc,none": 0.5277475516866159,
+      "acc_stderr,none": 0.011647846656062001,
+      "acc_norm,none": 0.5184983677910773,
+      "acc_norm_stderr,none": 0.01165783758381818
+    }
+  },
+  "generations": [
+    {
+      "prompt": "The future of artificial intelligence",
+      "generated": "The future of artificial intelligence"
+    },
+    {
+      "prompt": "Hello, how are you today?",
+      "generated": "Hello, how are you today?"
+    },
+    {
+      "prompt": "Write a bubble sort algorithm in Python.",
+      "generated": "Write a bubble sort algorithm in Python."
+    },
+    {
+      "prompt": "Let's schedule a meeting for next week.",
+      "generated": "Let's schedule a meeting for next week."
+    }
+  ],
+  "quant_elapsed_sec": 22713.2,
+  "elapsed_sec": 23008.2
+}

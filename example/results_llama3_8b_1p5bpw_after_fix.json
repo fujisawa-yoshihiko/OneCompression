@@ -1,0 +1,46 @@
+{
+  "experiment": "after_fix",
+  "model": "Meta-Llama-3-8B",
+  "target_bits": 1.5,
+  "l": 8,
+  "P": 1,
+  "hessian_fix": true,
+  "scale_bits": 16,
+  "ppl_wikitext2": 23.964607048364595,
+  "acc": {
+    "arc_easy": {
+      "alias": "arc_easy",
+      "acc,none": 0.39015151515151514,
+      "acc_stderr,none": 0.010009118166667455,
+      "acc_norm,none": 0.36574074074074076,
+      "acc_norm_stderr,none": 0.009882988069418874
+    },
+    "piqa": {
+      "alias": "piqa",
+      "acc,none": 0.5837867247007617,
+      "acc_stderr,none": 0.011500864675166542,
+      "acc_norm,none": 0.5745375408052231,
+      "acc_norm_stderr,none": 0.011535468840824452
+    }
+  },
+  "generations": [
+    {
+      "prompt": "The future of artificial intelligence",
+      "generated": "The future of artificial intelligence is a new technology that is a new technology that is a new technology that is a new technology that is a new technology that is a new technology that is a new technology that is a new technology that is a new technology that is a new technology that is a new technology that is a new technology that is a new technology that is a new technology that is a new technology that is a new technology that is a new technology that is a new technology that is a new technology that is a new technology that is a new technology that is a new technology that is a new technology that is a new technology that is a new technology that is a new"
+    },
+    {
+      "prompt": "Hello, how are you today?",
+      "generated": "Hello, how are you today? I am a man who is a man. I am a man who is a man. I am a man who is a man. I am a man. I am a man. I is a man. I is a man. I is a man. I is a man. I is a man. I is a man. I is a man. I is a man. I is a man. I is a man. I is a man. I is a man. I is a man. I is a man. I is a man. I is a man. I is a man. I is a man. I"
+    },
+    {
+      "prompt": "Write a bubble sort algorithm in Python.",
+      "generated": "Write a bubble sort algorithm in Python. The bubble sort algorithm is a method of the game that is a game that is a game that is a game that is a game that is a game that is a game that is a game that is a game that is a game that is a game that is a game that is a game that is a game that is a game that is a game that is a game that is a game that is a game that is a game that is a game that is a game that is a game that is a game that is a game that is a game that is a game that is a game that is a game that is a game that is"
+    },
+    {
+      "prompt": "Let's schedule a meeting for next week.",
+      "generated": "Let's schedule a meeting for next week. The meeting is a good opportunity to get the people to be able to get the people to be able to get the people to be to be to be to be to be to be to be to be to be to be to be to be to be to be to be to be to be to be to be to be to be to be to be to be to be to be to be to be to be to be to be to be to be to be to be to be to be to be to be to be to be to be to be to be to be to be to be to be to be to be to be to be"
+    }
+  ],
+  "quant_elapsed_sec": 40173.5,
+  "elapsed_sec": 40360.5
+}

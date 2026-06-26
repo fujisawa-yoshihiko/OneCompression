@@ -1,0 +1,51 @@
+{
+  "experiment": "gptq4_compare",
+  "model": "google/gemma-4-E2B",
+  "method": "GPTQ",
+  "wbits": 4,
+  "groupsize": 128,
+  "qep": false,
+  "ablation": "per_layer_* kept FP16",
+  "eval_mode": "dequantized_only (MDBF-aligned; quantized_model skipped for Gemma4)",
+  "ppl_wikitext2": 25.762262892211133,
+  "ppl_wikitext2_original": null,
+  "ppl_wikitext2_dequantized": 25.762262892211133,
+  "ppl_wikitext2_quantized": null,
+  "acc": {
+    "arc_easy": {
+      "alias": "arc_easy",
+      "acc,none": 0.7702020202020202,
+      "acc_stderr,none": 0.008632639854309298,
+      "acc_norm,none": 0.7613636363636364,
+      "acc_norm_stderr,none": 0.008746465140706287
+    },
+    "piqa": {
+      "alias": "piqa",
+      "acc,none": 0.7693144722524483,
+      "acc_stderr,none": 0.009828959550983209,
+      "acc_norm,none": 0.7845484221980413,
+      "acc_norm_stderr,none": 0.009592463115658116
+    }
+  },
+  "acc_quantized": null,
+  "generations": [
+    {
+      "prompt": "The future of artificial intelligence",
+      "generated": "The future of artificial intelligence (AI) is being shaped by the development of large language models (LLMs). These models, such as GPT-3 and BERT, have demonstrated remarkable capabilities in natural language processing tasks. However, there are still many challenges and limitations that need to be addressed before LLMs can be fully integrated into our daily lives.\n\nOne of the main challenges is the lack of transparency and explainability of LLMs. These models are often seen as “black boxes” that are difficult to understand and interpret. This makes it hard to know how they arrive at their conclusions and why they make certain decisions. This lack of transparency can lead to biases and"
+    },
+    {
+      "prompt": "Hello, how are you today?",
+      "generated": "Hello, how are you today?\n\nI hope you are doing well.\n\nI am a 20-year-old student at the University of the Philippines. I am currently taking up a Bachelor of Science in Nursing. I am also a member of the Philippine Red Cross.\n\nI am a very active person. I am a very friendly person. I am a very responsible person. I am a very hardworking person. I am a very kind person. I am a very loving person. I am a very caring person. I am a very honest person. I am a very respectful person. I am a very humble person. I am a very humble person."
+    },
+    {
+      "prompt": "Write a bubble sort algorithm in Python.",
+      "generated": "Write a bubble sort algorithm in Python.\n\nWrite a program that reads a list of integers from the user and sorts the list using the bubble sort algorithm.\n\nWrite a program that reads a list of integers from the user and sorts the list using the bubble sort algorithm.\n\nWrite a program that reads a list of integers from the user and sorts the list using the bubble sort algorithm.\n\nWrite a program that reads a list of integers from the user and sorts the list using the bubble sort algorithm.\n\nWrite a program that reads a list of integers from the user and sorts the list using the bubble sort algorithm.\n\nWrite a program that reads a list of integers from the user"
+    },
+    {
+      "prompt": "Let's schedule a meeting for next week.",
+      "generated": "Let's schedule a meeting for next week.\n\nI'm not sure if I'm the right person to talk to about this, but I'm happy to help.\n\nI'm not sure if I'm the right person to talk to about this, but I'm happy to help.\n\nI'm not sure if I'm the right person to talk to about this, but I'm happy to help.\n\nI'm not sure if I'm the right person to talk to about this, but I'm happy to help.\n\nI'm not sure if I'm the right person to talk to about this, but"
+    }
+  ],
+  "quant_elapsed_sec": 1617.8,
+  "elapsed_sec": 1829.0
+}

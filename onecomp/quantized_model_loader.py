@@ -20,10 +20,12 @@ from transformers.models.auto.configuration_auto import CONFIG_MAPPING
 
 from .quantizer.dbf.config import resolve_dbf_layer_bits
 from .quantizer.dbf.dbf_layer import DoubleBinaryLinear
-from .quantizer.gptq.config import resolve_gptq_layer_wbits, resolve_gptq_layer_group_size
+from .quantizer.gptq.config import resolve_gptq_layer_group_size, resolve_gptq_layer_wbits
 from .quantizer.gptq.gptq_layer import GPTQLinear
 from .quantizer.mdbf.config import resolve_mdbf_layer_bits
 from .quantizer.mdbf.mdbf_layer import MultipathMDBFLinear
+from .quantizer.onebit.onebit_layer import OneBitLinear
+from .utils.device import get_default_device
 from .utils.dtype import needs_bfloat16
 from .utils.quant_config import get_quant_param
 
@@ -31,7 +33,7 @@ logger = getLogger(__name__)
 
 
 class QuantizedModelLoader:
-    """Loader for quantized models saved by onecomp (GPTQ, DBF, etc.)."""
+    """Loader for quantized models saved by onecomp (GPTQ, DBF, OneBit, etc.)."""
 
     @classmethod
     def load_quantized_model(
@@ -150,6 +152,8 @@ class QuantizedModelLoader:
                 layers_cls = [DoubleBinaryLinear]
             elif effective_method == "mdbf":
                 layers_cls = [MultipathMDBFLinear]
+            elif effective_method == "onebit":
+                layers_cls = [OneBitLinear]
             else:
                 layers_cls = None
             hooks = register_online_hadamard_hooks(
@@ -171,7 +175,7 @@ class QuantizedModelLoader:
                 device_map_resolved = infer_auto_device_map(model)
                 model = dispatch_model(model, device_map=device_map_resolved)
             except ImportError:
-                model = model.to("cuda" if torch.cuda.is_available() else "cpu")
+                model = model.to(get_default_device())
 
         tokenizer = AutoTokenizer.from_pretrained(
             save_directory,
@@ -233,7 +237,7 @@ class QuantizedModelLoader:
                 device_map_resolved = infer_auto_device_map(model)
                 model = dispatch_model(model, device_map=device_map_resolved)
             except ImportError:
-                model = model.to("cuda" if torch.cuda.is_available() else "cpu")
+                model = model.to(get_default_device())
 
         tokenizer = AutoTokenizer.from_pretrained(
             save_directory,
@@ -273,8 +277,9 @@ class QuantizedModelLoader:
         """Cast fp16 params/buffers of non-quantized modules to ``target_dtype``.
 
         Quantized layers (``GPTQLinear``, ``DoubleBinaryLinear``,
-        ``MultipathMDBFLinear``) are
-        skipped so their fp16 metadata (e.g. GPTQ ``scales``) is preserved.
+        ``MultipathMDBFLinear``, ``OneBitLinear``) are skipped so their fp16
+        metadata (e.g. GPTQ ``scales``, OneBit ``a``/``b`` scaling vectors)
+        is preserved.
         Only fp16 tensors are cast: fp32 params (e.g. fp32 LayerNorm in
         mixed-precision models) and other dtypes are left untouched.
 
@@ -294,7 +299,7 @@ class QuantizedModelLoader:
         converted: List[str] = []
         if target_dtype == torch.float16:
             return converted
-        skip_types = (GPTQLinear, DoubleBinaryLinear, MultipathMDBFLinear)
+        skip_types = (GPTQLinear, DoubleBinaryLinear, MultipathMDBFLinear, OneBitLinear)
         for mod_name, mod in model.named_modules():
             if isinstance(mod, skip_types):
                 continue
@@ -577,6 +582,13 @@ class QuantizedModelLoader:
                     out_features=out_features,
                     empty=True,
                     target_bits=layer_target_bits,
+                )
+            elif effective_method == "onebit":
+                quantized_module = OneBitLinear.from_saved_state(
+                    layer_sd,
+                    in_features=in_features,
+                    out_features=out_features,
+                    empty=True,
                 )
             else:
                 raise ValueError(

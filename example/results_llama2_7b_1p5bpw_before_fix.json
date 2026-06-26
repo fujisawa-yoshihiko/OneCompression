@@ -1,0 +1,46 @@
+{
+  "experiment": "before_fix",
+  "model": "Llama-2-7b-hf",
+  "target_bits": 1.5,
+  "l": 8,
+  "P": 1,
+  "hessian_fix": false,
+  "scale_bits": 0,
+  "ppl_wikitext2": 11.824578281163465,
+  "acc": {
+    "arc_easy": {
+      "alias": "arc_easy",
+      "acc,none": 0.4238215488215488,
+      "acc_stderr,none": 0.01014000609521362,
+      "acc_norm,none": 0.4053030303030303,
+      "acc_norm_stderr,none": 0.010074093589739265
+    },
+    "piqa": {
+      "alias": "piqa",
+      "acc,none": 0.602829162132753,
+      "acc_stderr,none": 0.011416453840790413,
+      "acc_norm,none": 0.5919477693144722,
+      "acc_norm_stderr,none": 0.011466872778651143
+    }
+  },
+  "generations": [
+    {
+      "prompt": "The future of artificial intelligence",
+      "generated": "The future of artificial intelligence is a matter of the future of artificial intelligence.\n\n##\n\n##\n\n##\n\n##\n\n##\n\n##\n\n##\n\n##\n\n##\n\n##\n\n##\n\n##\n\n##\n\n##\n\n##\n\n##\n\n##\n\n##\n\n##\n\n##\n\n##\n\n##\n\n##\n\n##\n\n##\n\n##\n\n##\n\n##\n\n##\n\n##\n\n##\n\n##\n\n##\n\n##\n\n##\n\n##\n\n##\n\n##\n\n##\n"
+    },
+    {
+      "prompt": "Hello, how are you today?",
+      "generated": "Hello, how are you today?\n\n### The 1990s\n\nThe 1990s were a period of the 1990s, the 1990s, the 1990s, the 1990s, the 1990s, the 1990s, the 1990s, the 1990s, the 1990s, the 1990s, the 1990s, the 1990s, the 1990s,"
+    },
+    {
+      "prompt": "Write a bubble sort algorithm in Python.",
+      "generated": "Write a bubble sort algorithm in Python.\n\n###\n\n###\n\n###\n\n###\n\n###\n\n###\n\n##=\n\n##=\n\n##=\n\n##=\n\n##=\n\n##=\n\n##=\n\n##=\n\n##=\n\n##=\n\n##=\n\n##=\n\n##=\n\n##=\n\n##=\n\n##=\n\n##=\n\n##=\n\n##=\n\n##=\n\n##=\n\n##=\n\n##=\n\n##=\n\n##=\n\n##="
+    },
+    {
+      "prompt": "Let's schedule a meeting for next week.",
+      "generated": "Let's schedule a meeting for next week.\n\n### The 2012-2013 season\n\nThe 2012-2013 season was the 10th season of the NBA. The NBA was the first basketball league to have a 20- game schedule. The NBA was the first basketball league to have a 20- game schedule. The NBA was the first basketball league to have a 20- game schedule. The NBA was the first basketball league to have a 20- game schedule. The NBA was the first basketball league to have a 20- game schedule. The NBA"
+    }
+  ],
+  "quant_elapsed_sec": 38073.6,
+  "elapsed_sec": 38250.8
+}
