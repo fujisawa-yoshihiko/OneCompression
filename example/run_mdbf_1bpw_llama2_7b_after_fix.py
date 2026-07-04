@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
-"""Experiment ② Llama2-7B: MDBF 1bpw - after fix (a9b46df, current HEAD).
-  Hessian✅ (Q^T含む), scale_bits=16 → 実際BPW≈1.000
+"""Llama2-7B MDBF 1bpw standard configuration: Hessian-weighted SVD, scale_bits=16.
+
+Configuration:
+  - W_tilde = W @ Q @ diag(sqrt(λ)) @ Q^T  (Hessian eigenvector rotation applied)
+  - scale_bits=16  (FP16 envelope parameters counted in BPW budget)
+  → actual BPW ≈ 1.000
+
 GPU: cuda:3
 """
 from __future__ import annotations
@@ -23,8 +28,9 @@ def _exclude_kws(num_layers, first_n=4, last_n=4):
 
 def main():
     print("=" * 80)
-    print("Llama2-7B MDBF 1bpw - ② AFTER FIX (a9b46df)")
-    print(f"  Hessian: Q @ diag(√λ) @ Q^T [FIXED] | scale_bits=16 [FIXED] → 実際BPW≈1.000")
+    print("Llama2-7B MDBF 1bpw - Standard: Hessian-weighted SVD, scale_bits=16")
+    print(f"  W_tilde = W @ Q @ diag(sqrt(λ)) @ Q^T")
+    print(f"  scale_bits=16  → actual BPW ≈ 1.000")
     print(f"  device: {DEVICE}")
     print("=" * 80)
     model_config = ModelConfig(path=MODEL_PATH, device=DEVICE)
@@ -44,10 +50,10 @@ def main():
         dataset_name="wikitext", dataset_config="wikitext-2-raw-v1")
     _, acc, _ = runner.calculate_accuracy(original_model=False, dequantized_model=True, quantized_model=False,
         tasks=["arc_easy", "piqa"], num_fewshot=0)
-    result = {"experiment": "after_fix", "model": "Llama-2-7b-hf", "target_bits": TARGET_BITS,
-        "l": L, "P": P, "hessian_fix": True, "scale_bits": 16, "actual_bpw_approx": 1.000,
+    result = {"experiment": "standard_hessian_weighted_scale16", "model": "Llama-2-7b-hf", "target_bits": TARGET_BITS,
+        "l": L, "P": P, "hessian_weighted_svd": True, "scale_bits": 16, "actual_bpw_approx": 1.000,
         "ppl_wikitext2": ppl, "acc": acc, "elapsed_sec": round(elapsed, 1)}
-    print(f"\n{'='*80}\n[RESULT] ② after_fix\n  PPL: {ppl}\n  ACC: {acc}\n  Elapsed: {elapsed:.0f}s\n{'='*80}")
+    print(f"\n{'='*80}\n[RESULT] Standard: Hessian-weighted SVD, scale_bits=16\n  PPL: {ppl}\n  ACC: {acc}\n  Elapsed: {elapsed:.0f}s\n{'='*80}")
     OUTPUT_FILE.write_text(json.dumps(result, indent=2, ensure_ascii=False))
     print(f"Saved to: {OUTPUT_FILE}")
     return 0

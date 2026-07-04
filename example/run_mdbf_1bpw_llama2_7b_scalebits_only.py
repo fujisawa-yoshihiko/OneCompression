@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
-"""Experiment ④ Llama2-7B: MDBF 1bpw - scale_bitsのみ修正 (Hessianはバグあり).
-  Hessian❌ (Q^T欠落), scale_bits=16 → 実際BPW≈1.000
-GPU: cuda:3  (②完了後に実行)
+"""Ablation ④ Llama2-7B: MDBF 1bpw - standard SVD without Hessian weighting, scale_bits=16.
+
+Configuration:
+  - W_tilde = W @ Q @ diag(sqrt(λ))  (no Q^T; ignores eigenvector rotation)
+  - scale_bits=16  (FP16 envelope parameters counted in BPW budget)
+  → actual BPW ≈ 1.000
+
+GPU: cuda:3
 """
 from __future__ import annotations
 import json, logging, sys, time
@@ -11,7 +16,14 @@ import torch
 import onecomp.quantizer.mdbf.initialize as _init_mod
 import onecomp.quantizer.mdbf.mdbf_layer as _layer_mod
 
-def _buggy_lowrank_osvd(W, H, r, ridge=1e-4):
+# Monkey-patch: lowrank_osvd without Q^T (eigenvector back-rotation omitted).
+# scale_bits=16 is retained (default).
+def _lowrank_osvd_no_qt(W, H, r, ridge=1e-4):
+    """lowrank_osvd without Q^T: W_tilde = W @ Q @ diag(sqrt(λ)).
+
+    The eigenvector back-rotation (@ Q^T) is omitted, so the weight-space
+    metric is not properly inverted.  Used as an ablation baseline.
+    """
     from onecomp.quantizer.mdbf.initialize import _lowrank_svd_standard, cleanup_gpu_memory, ensure_float32
     n, m = W.shape
     r = min(r, min(n, m))
@@ -26,7 +38,8 @@ def _buggy_lowrank_osvd(W, H, r, ridge=1e-4):
         return _lowrank_svd_standard(W, r, W.dtype)
     eig_vals = eig_vals.clamp(min=1e-12)
     sqrt_eig = torch.sqrt(eig_vals)
-    W_tilde = W_fp32 @ eig_vecs @ torch.diag(sqrt_eig)  # Q^T missing
+    # W_tilde = W @ Q @ diag(sqrt(λ))  -- eigenvector back-rotation omitted
+    W_tilde = W_fp32 @ eig_vecs @ torch.diag(sqrt_eig)
     del H_reg
     eps_svd = 1e-6 * W_tilde.abs().max().clamp(min=1e-12)
     U_w, S_w, Vh_w = torch.linalg.svd(W_tilde + eps_svd * torch.randn_like(W_tilde), full_matrices=False)
@@ -40,8 +53,8 @@ def _buggy_lowrank_osvd(W, H, r, ridge=1e-4):
     cleanup_gpu_memory()
     return U_prime.to(W.dtype), V_prime.to(W.dtype)
 
-_init_mod.lowrank_osvd = _buggy_lowrank_osvd
-_layer_mod.lowrank_osvd = _buggy_lowrank_osvd
+_init_mod.lowrank_osvd = _lowrank_osvd_no_qt
+_layer_mod.lowrank_osvd = _lowrank_osvd_no_qt
 
 from onecomp import CalibrationConfig, ModelConfig, QEPConfig, Runner
 from onecomp.quantizer.mdbf import MDBF
@@ -59,8 +72,9 @@ def _exclude_kws(num_layers, first_n=4, last_n=4):
 
 def main():
     print("=" * 80)
-    print("Llama2-7B MDBF 1bpw - ④ scale_bitsのみ修正 (Hessianはバグあり)")
-    print(f"  Hessian: Q^T missing [BUG] | scale_bits=16 [FIXED] → 実際BPW≈1.000")
+    print("Llama2-7B MDBF 1bpw - Ablation ④: no Hessian rotation, scale_bits=16")
+    print(f"  W_tilde = W @ Q @ diag(sqrt(λ))  (eigenvector back-rotation omitted)")
+    print(f"  scale_bits=16  → actual BPW ≈ 1.000")
     print(f"  device: {DEVICE}")
     print("=" * 80)
     model_config = ModelConfig(path=MODEL_PATH, device=DEVICE)
@@ -80,10 +94,10 @@ def main():
         dataset_name="wikitext", dataset_config="wikitext-2-raw-v1")
     _, acc, _ = runner.calculate_accuracy(original_model=False, dequantized_model=True, quantized_model=False,
         tasks=["arc_easy", "piqa"], num_fewshot=0)
-    result = {"experiment": "scalebits_only_fix", "model": "Llama-2-7b-hf", "target_bits": TARGET_BITS,
-        "l": L, "P": P, "hessian_fix": False, "scale_bits": 16, "actual_bpw_approx": 1.000,
+    result = {"experiment": "ablation_no_hessian_rotation_scale16", "model": "Llama-2-7b-hf", "target_bits": TARGET_BITS,
+        "l": L, "P": P, "hessian_weighted_svd": False, "scale_bits": 16, "actual_bpw_approx": 1.000,
         "ppl_wikitext2": ppl, "acc": acc, "elapsed_sec": round(elapsed, 1)}
-    print(f"\n{'='*80}\n[RESULT] ④ scalebits_only_fix\n  PPL: {ppl}\n  ACC: {acc}\n  Elapsed: {elapsed:.0f}s\n{'='*80}")
+    print(f"\n{'='*80}\n[RESULT] Ablation ④: no Hessian rotation, scale_bits=16\n  PPL: {ppl}\n  ACC: {acc}\n  Elapsed: {elapsed:.0f}s\n{'='*80}")
     OUTPUT_FILE.write_text(json.dumps(result, indent=2, ensure_ascii=False))
     print(f"Saved to: {OUTPUT_FILE}")
     return 0

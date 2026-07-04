@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
-"""Experiment ③ Llama2-7B: MDBF 1bpw - Hessianのみ修正 (scale_bits=0).
-  Hessian✅ (Q^T含む), scale_bits=0 → 実際BPW≈1.094
-GPU: cuda:2  (①完了後に実行)
+"""Ablation ③ Llama2-7B: MDBF 1bpw - Hessian-weighted SVD, scale_bits=0.
+
+Configuration:
+  - W_tilde = W @ Q @ diag(sqrt(λ)) @ Q^T  (Hessian eigenvector rotation applied)
+  - scale_bits=0  (FP16 envelope parameters excluded from BPW budget)
+  → actual BPW ≈ 1.094
+
+GPU: cuda:2
 """
 from __future__ import annotations
 import json, logging, sys, time, math
@@ -10,14 +15,17 @@ from pathlib import Path
 import onecomp.quantizer.mdbf.utils as _utils_mod
 import onecomp.quantizer.mdbf.mdbf_layer as _layer_mod
 
-def _rank_scale0(n, m, b_target, l=1, P=2, min_rank=1, rounding="floor", scale_bits=0):
-    scale_bits = 0
+# Monkey-patch: scale_bits=0 so FP16 envelope parameters are not counted in the BPW budget.
+# Hessian-weighted SVD (standard lowrank_osvd) is kept.
+def _rank_from_bpw_scale0(n, m, b_target, l=1, P=2, min_rank=1, rounding="floor", scale_bits=0):
+    """rank_from_bpw with scale_bits=0: FP16 envelope parameters not counted in BPW."""
+    scale_bits = 0  # FP16 envelope not counted; actual BPW exceeds target
     r_real = (b_target * n * m / P) / (n + m)
     r = int(math.floor(r_real)) if rounding == "floor" else (int(math.ceil(r_real)) if rounding == "ceil" else int(round(r_real)))
     return max(min_rank, min(r, min(n, m)))
 
-_utils_mod.rank_from_bpw = _rank_scale0
-_layer_mod.rank_from_bpw = _rank_scale0
+_utils_mod.rank_from_bpw = _rank_from_bpw_scale0
+_layer_mod.rank_from_bpw = _rank_from_bpw_scale0
 
 from onecomp import CalibrationConfig, ModelConfig, QEPConfig, Runner
 from onecomp.quantizer.mdbf import MDBF
@@ -35,8 +43,9 @@ def _exclude_kws(num_layers, first_n=4, last_n=4):
 
 def main():
     print("=" * 80)
-    print("Llama2-7B MDBF 1bpw - ③ Hessianのみ修正 (scale_bits=0)")
-    print(f"  Hessian: FIXED | scale_bits=0 [旧] → 実際BPW≈1.094")
+    print("Llama2-7B MDBF 1bpw - Ablation ③: Hessian-weighted SVD, scale_bits=0")
+    print(f"  W_tilde = W @ Q @ diag(sqrt(λ)) @ Q^T")
+    print(f"  scale_bits=0  (FP16 envelope not counted in BPW)  → actual BPW ≈ 1.094")
     print(f"  device: {DEVICE}")
     print("=" * 80)
     model_config = ModelConfig(path=MODEL_PATH, device=DEVICE)
@@ -56,10 +65,10 @@ def main():
         dataset_name="wikitext", dataset_config="wikitext-2-raw-v1")
     _, acc, _ = runner.calculate_accuracy(original_model=False, dequantized_model=True, quantized_model=False,
         tasks=["arc_easy", "piqa"], num_fewshot=0)
-    result = {"experiment": "hessian_only_fix", "model": "Llama-2-7b-hf", "target_bits": TARGET_BITS,
-        "l": L, "P": P, "hessian_fix": True, "scale_bits": 0, "actual_bpw_approx": 1.094,
+    result = {"experiment": "ablation_hessian_weighted_scale0", "model": "Llama-2-7b-hf", "target_bits": TARGET_BITS,
+        "l": L, "P": P, "hessian_weighted_svd": True, "scale_bits": 0, "actual_bpw_approx": 1.094,
         "ppl_wikitext2": ppl, "acc": acc, "elapsed_sec": round(elapsed, 1)}
-    print(f"\n{'='*80}\n[RESULT] ③ hessian_only_fix\n  PPL: {ppl}\n  ACC: {acc}\n  Elapsed: {elapsed:.0f}s\n{'='*80}")
+    print(f"\n{'='*80}\n[RESULT] Ablation ③: Hessian-weighted SVD, scale_bits=0\n  PPL: {ppl}\n  ACC: {acc}\n  Elapsed: {elapsed:.0f}s\n{'='*80}")
     OUTPUT_FILE.write_text(json.dumps(result, indent=2, ensure_ascii=False))
     print(f"Saved to: {OUTPUT_FILE}")
     return 0

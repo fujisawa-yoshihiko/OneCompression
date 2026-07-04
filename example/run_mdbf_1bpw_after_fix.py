@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Experiment: MDBF 1bpw with Hessian FIX (commit a9b46df).
+"""MDBF 1bpw standard configuration: Hessian-weighted SVD, scale_bits=16.
 
-修正後 (after fix):
-  - W_tilde = W @ Q @ diag(sqrt(λ)) @ Q^T  (固有ベクトルの転置を含む)
-  - scale_bits=16  (FP16スケールをBPWに含める)
+Configuration:
+  - W_tilde = W @ Q @ diag(sqrt(λ)) @ Q^T  (Hessian eigenvector rotation applied)
+  - scale_bits=16  (FP16 envelope parameters counted in BPW budget)
+  → actual BPW ≈ 1.000
 
 GPU: cuda:0
 """
@@ -35,9 +36,9 @@ def _build_exclude_keywords(num_layers: int, first_n: int = 4, last_n: int = 4) 
 
 def main() -> int:
     print("=" * 80)
-    print("MDBF 1bpw - AFTER FIX (commit a9b46df)")
-    print(f"  W_tilde = W @ Q @ diag(sqrt(λ)) @ Q^T  [FIXED]")
-    print(f"  scale_bits = 16  [FIXED]")
+    print("MDBF 1bpw - Standard: Hessian-weighted SVD, scale_bits=16")
+    print(f"  W_tilde = W @ Q @ diag(sqrt(λ)) @ Q^T")
+    print(f"  scale_bits = 16  → actual BPW ≈ 1.000")
     print(f"  target_bits = {TARGET_BITS}, l={L}, P={P}")
     print(f"  device: {DEVICE}")
     print("=" * 80)
@@ -100,20 +101,20 @@ def main() -> int:
     )
 
     result = {
-        "experiment": "after_fix",
-        "commit": "a9b46df",
+        "experiment": "standard_hessian_weighted_scale16",
         "target_bits": TARGET_BITS,
         "l": L,
         "P": P,
-        "hessian_fix": True,
+        "hessian_weighted_svd": True,
         "scale_bits": 16,
+        "actual_bpw_approx": 1.000,
         "ppl_wikitext2": dequant_ppl,
         "acc": dequant_acc,
         "elapsed_sec": round(elapsed, 1),
     }
 
     print("\n" + "=" * 80)
-    print("[RESULT] after_fix (a9b46df)")
+    print("[RESULT] Standard: Hessian-weighted SVD, scale_bits=16")
     print(f"  PPL (wikitext2): {dequant_ppl}")
     print(f"  ACC (arc_easy, piqa): {dequant_acc}")
     print(f"  Elapsed: {elapsed:.0f}s")

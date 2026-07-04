@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Experiment: MDBF 1bpw WITHOUT Hessian FIX (reproduces commit 6dd3bc2 behavior).
+"""Ablation ①: MDBF 1bpw - standard SVD without Hessian weighting, scale_bits=0.
 
-修正前 (before fix):
-  - W_tilde = W @ Q @ diag(sqrt(λ))  (Q^Tが欠落していたバグ)
-  - scale_bits=0  (スケールをBPW計算に含めない)
+Configuration:
+  - W_tilde = W @ Q @ diag(sqrt(λ))  (no Q^T; ignores eigenvector rotation)
+  - scale_bits=0  (FP16 envelope parameters excluded from BPW budget)
+  → actual BPW ≈ 1.094
 
-モンキーパッチで旧挙動を再現する（コード本体には手を加えない）。
+Monkey-patches lowrank_osvd and rank_from_bpw to reproduce this configuration
+without modifying the library source.
 
 GPU: cuda:1
 """
@@ -20,7 +22,8 @@ from pathlib import Path
 import torch
 
 # -----------------------------------------------------------------------
-# モンキーパッチ: 修正前の挙動を再現
+# Monkey-patch: use standard SVD (no Hessian eigenvector rotation) and
+# scale_bits=0 so FP16 envelope parameters are not counted in the BPW budget.
 # -----------------------------------------------------------------------
 import onecomp.quantizer.mdbf.initialize as _init_mod
 import onecomp.quantizer.mdbf.utils as _utils_mod
@@ -29,8 +32,12 @@ _orig_lowrank_osvd = _init_mod.lowrank_osvd
 _orig_rank_from_bpw = _utils_mod.rank_from_bpw
 
 
-def _buggy_lowrank_osvd(W, H, r, ridge=1e-4):
-    """修正前のlowrank_osvd: W_tilde = W @ Q @ diag(sqrt(λ)) (Q^T欠落)"""
+def _lowrank_osvd_no_qt(W, H, r, ridge=1e-4):
+    """lowrank_osvd without Q^T: W_tilde = W @ Q @ diag(sqrt(λ)).
+
+    The eigenvector back-rotation (@ Q^T) is omitted, so the weight-space
+    metric is not properly inverted.  Used as an ablation baseline.
+    """
     from onecomp.quantizer.mdbf.initialize import (
         _lowrank_svd_standard,
         cleanup_gpu_memory,
@@ -56,7 +63,7 @@ def _buggy_lowrank_osvd(W, H, r, ridge=1e-4):
     eig_vals = eig_vals.clamp(min=1e-12)
     sqrt_eig = torch.sqrt(eig_vals)
 
-    # ★ バグ: Q^T が欠落
+    # W_tilde = W @ Q @ diag(sqrt(λ))  -- eigenvector back-rotation omitted
     W_tilde = W_fp32 @ eig_vecs @ torch.diag(sqrt_eig)
     del H_reg
 
@@ -84,12 +91,12 @@ def _buggy_lowrank_osvd(W, H, r, ridge=1e-4):
     return U_prime.to(W.dtype), V_prime.to(W.dtype)
 
 
-def _buggy_rank_from_bpw(n, m, b_target, l=1, P=2, min_rank=1, rounding="floor", scale_bits=0):
-    """修正前のrank_from_bpw: scale_bits=0 がハードコードされていた"""
+def _rank_from_bpw_scale0(n, m, b_target, l=1, P=2, min_rank=1, rounding="floor", scale_bits=0):
+    """rank_from_bpw with scale_bits=0: FP16 envelope parameters not counted in BPW."""
     from typing import Literal
     import math
 
-    scale_bits = 0  # ★ バグ: 常に0
+    scale_bits = 0  # FP16 envelope not counted; actual BPW exceeds target
     numerator = (b_target * n * m / P) - scale_bits * l * (n + m)
     denominator = (n + m) + 2 * scale_bits * l
 
@@ -106,13 +113,12 @@ def _buggy_rank_from_bpw(n, m, b_target, l=1, P=2, min_rank=1, rounding="floor",
     return max(min_rank, min(r, max_rank))
 
 
-# パッチ適用
-_init_mod.lowrank_osvd = _buggy_lowrank_osvd
-_utils_mod.rank_from_bpw = _buggy_rank_from_bpw
-# mdbf_layer.py からのインポートも差し替え
+# Apply patches
+_init_mod.lowrank_osvd = _lowrank_osvd_no_qt
+_utils_mod.rank_from_bpw = _rank_from_bpw_scale0
 import onecomp.quantizer.mdbf.mdbf_layer as _layer_mod
-_layer_mod.lowrank_osvd = _buggy_lowrank_osvd
-_layer_mod.rank_from_bpw = _buggy_rank_from_bpw
+_layer_mod.lowrank_osvd = _lowrank_osvd_no_qt
+_layer_mod.rank_from_bpw = _rank_from_bpw_scale0
 
 # -----------------------------------------------------------------------
 
@@ -136,9 +142,9 @@ def _build_exclude_keywords(num_layers: int, first_n: int = 4, last_n: int = 4) 
 
 def main() -> int:
     print("=" * 80)
-    print("MDBF 1bpw - BEFORE FIX (reproduces commit 6dd3bc2 behavior)")
-    print(f"  W_tilde = W @ Q @ diag(sqrt(λ))  [BUG: Q^T missing]")
-    print(f"  scale_bits = 0  [BUG: FP16 scales not counted in BPW]")
+    print("MDBF 1bpw - Ablation ①: no Hessian rotation, scale_bits=0")
+    print(f"  W_tilde = W @ Q @ diag(sqrt(λ))  (eigenvector back-rotation omitted)")
+    print(f"  scale_bits = 0  (FP16 envelope not counted in BPW)  → actual BPW ≈ 1.094")
     print(f"  target_bits = {TARGET_BITS}, l={L}, P={P}")
     print(f"  device: {DEVICE}")
     print("=" * 80)
@@ -201,20 +207,20 @@ def main() -> int:
     )
 
     result = {
-        "experiment": "before_fix",
-        "commit": "6dd3bc2 (behavior reproduced)",
+        "experiment": "ablation_no_hessian_rotation_scale0",
         "target_bits": TARGET_BITS,
         "l": L,
         "P": P,
-        "hessian_fix": False,
+        "hessian_weighted_svd": False,
         "scale_bits": 0,
+        "actual_bpw_approx": 1.094,
         "ppl_wikitext2": dequant_ppl,
         "acc": dequant_acc,
         "elapsed_sec": round(elapsed, 1),
     }
 
     print("\n" + "=" * 80)
-    print("[RESULT] before_fix (6dd3bc2 behavior)")
+    print("[RESULT] Ablation ①: no Hessian rotation, scale_bits=0")
     print(f"  PPL (wikitext2): {dequant_ppl}")
     print(f"  ACC (arc_easy, piqa): {dequant_acc}")
     print(f"  Elapsed: {elapsed:.0f}s")

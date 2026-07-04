@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
-"""Experiment ③: MDBF 1bpw - Hessianのみ修正 (scale_bits=0のまま).
+"""Ablation ③: MDBF 1bpw - Hessian-weighted SVD, scale_bits=0.
 
-  - W_tilde = W @ Q @ diag(sqrt(λ)) @ Q^T  [FIXED]
-  - scale_bits = 0  [NOT fixed, hardcoded to 0]
-  → 実際BPW ≈ 1.1875 (修正前と同じBPW条件でHessianのみ比較)
+Configuration:
+  - W_tilde = W @ Q @ diag(sqrt(λ)) @ Q^T  (Hessian eigenvector rotation applied)
+  - scale_bits = 0  (FP16 envelope parameters excluded from BPW budget)
+  → actual BPW ≈ 1.1875
+
+Monkey-patches rank_from_bpw to use scale_bits=0 while keeping the
+Hessian-weighted SVD initialization.
 
 GPU: cuda:2
 """
@@ -18,7 +22,8 @@ from pathlib import Path
 import torch
 
 # -----------------------------------------------------------------------
-# モンキーパッチ: scale_bitsのみ旧挙動(0)に戻す。Hessianは修正済みを使う。
+# Monkey-patch: use scale_bits=0 so FP16 envelope parameters are not counted
+# in the BPW budget.  Hessian-weighted SVD (standard lowrank_osvd) is kept.
 # -----------------------------------------------------------------------
 import onecomp.quantizer.mdbf.utils as _utils_mod
 import onecomp.quantizer.mdbf.mdbf_layer as _layer_mod
@@ -26,8 +31,8 @@ import onecomp.quantizer.mdbf.mdbf_layer as _layer_mod
 import math
 
 def _rank_from_bpw_scale0(n, m, b_target, l=1, P=2, min_rank=1, rounding="floor", scale_bits=0):
-    """scale_bits=0 固定（修正前の挙動）"""
-    scale_bits = 0
+    """rank_from_bpw with scale_bits=0: FP16 envelope parameters not counted in BPW."""
+    scale_bits = 0  # FP16 envelope not counted; actual BPW exceeds target
     numerator = (b_target * n * m / P) - scale_bits * l * (n + m)
     denominator = (n + m) + 2 * scale_bits * l
     r_real = numerator / denominator
@@ -64,9 +69,9 @@ def _build_exclude_keywords(num_layers: int, first_n: int = 4, last_n: int = 4) 
 
 def main() -> int:
     print("=" * 80)
-    print("MDBF 1bpw - ③ Hessianのみ修正 (scale_bits=0のまま)")
-    print(f"  W_tilde = W @ Q @ diag(sqrt(λ)) @ Q^T  [FIXED]")
-    print(f"  scale_bits = 0  [NOT fixed]  → 実際BPW≈1.1875")
+    print("MDBF 1bpw - Ablation ③: Hessian-weighted SVD, scale_bits=0")
+    print(f"  W_tilde = W @ Q @ diag(sqrt(λ)) @ Q^T")
+    print(f"  scale_bits = 0  (FP16 envelope not counted in BPW)  → actual BPW ≈ 1.1875")
     print(f"  target_bits = {TARGET_BITS}, l={L}, P={P}")
     print(f"  device: {DEVICE}")
     print("=" * 80)
@@ -129,11 +134,11 @@ def main() -> int:
     )
 
     result = {
-        "experiment": "hessian_only_fix",
+        "experiment": "ablation_hessian_weighted_scale0",
         "target_bits": TARGET_BITS,
         "l": L,
         "P": P,
-        "hessian_fix": True,
+        "hessian_weighted_svd": True,
         "scale_bits": 0,
         "actual_bpw_approx": 1.1875,
         "ppl_wikitext2": dequant_ppl,
@@ -142,7 +147,7 @@ def main() -> int:
     }
 
     print("\n" + "=" * 80)
-    print("[RESULT] ③ hessian_only_fix")
+    print("[RESULT] Ablation ③: Hessian-weighted SVD, scale_bits=0")
     print(f"  PPL (wikitext2): {dequant_ppl}")
     print(f"  ACC (arc_easy, piqa): {dequant_acc}")
     print(f"  Elapsed: {elapsed:.0f}s")

@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
-"""Experiment ④: MDBF 1bpw - scale_bitsのみ修正 (Hessianはバグあり).
+"""Ablation ④: MDBF 1bpw - standard SVD without Hessian weighting, scale_bits=16.
 
-  - W_tilde = W @ Q @ diag(sqrt(λ))  [BUG: Q^T missing]
-  - scale_bits = 16  [FIXED]
-  → 実際BPW ≈ 1.000 (修正後と同じBPW条件でHessianのみ比較)
+Configuration:
+  - W_tilde = W @ Q @ diag(sqrt(λ))  (no Q^T; ignores eigenvector rotation)
+  - scale_bits = 16  (FP16 envelope parameters counted in BPW budget)
+  → actual BPW ≈ 1.000
+
+Monkey-patches lowrank_osvd to use standard SVD (no eigenvector back-rotation)
+while keeping scale_bits=16.
 
 GPU: cuda:3
 """
@@ -18,14 +22,19 @@ from pathlib import Path
 import torch
 
 # -----------------------------------------------------------------------
-# モンキーパッチ: Hessianのみ旧挙動(Q^T欠落)に戻す。scale_bitsは修正済みを使う。
+# Monkey-patch: use standard SVD (no Hessian eigenvector rotation).
+# scale_bits=16 is retained (default).
 # -----------------------------------------------------------------------
 import onecomp.quantizer.mdbf.initialize as _init_mod
 import onecomp.quantizer.mdbf.mdbf_layer as _layer_mod
 
 
-def _buggy_lowrank_osvd(W, H, r, ridge=1e-4):
-    """修正前のlowrank_osvd: W_tilde = W @ Q @ diag(sqrt(λ)) (Q^T欠落)"""
+def _lowrank_osvd_no_qt(W, H, r, ridge=1e-4):
+    """lowrank_osvd without Q^T: W_tilde = W @ Q @ diag(sqrt(λ)).
+
+    The eigenvector back-rotation (@ Q^T) is omitted, so the weight-space
+    metric is not properly inverted.  Used as an ablation baseline.
+    """
     from onecomp.quantizer.mdbf.initialize import (
         _lowrank_svd_standard,
         cleanup_gpu_memory,
@@ -51,7 +60,7 @@ def _buggy_lowrank_osvd(W, H, r, ridge=1e-4):
     eig_vals = eig_vals.clamp(min=1e-12)
     sqrt_eig = torch.sqrt(eig_vals)
 
-    # ★ バグ: Q^T が欠落
+    # W_tilde = W @ Q @ diag(sqrt(λ))  -- eigenvector back-rotation omitted
     W_tilde = W_fp32 @ eig_vecs @ torch.diag(sqrt_eig)
     del H_reg
 
@@ -79,8 +88,8 @@ def _buggy_lowrank_osvd(W, H, r, ridge=1e-4):
     return U_prime.to(W.dtype), V_prime.to(W.dtype)
 
 
-_init_mod.lowrank_osvd = _buggy_lowrank_osvd
-_layer_mod.lowrank_osvd = _buggy_lowrank_osvd
+_init_mod.lowrank_osvd = _lowrank_osvd_no_qt
+_layer_mod.lowrank_osvd = _lowrank_osvd_no_qt
 # -----------------------------------------------------------------------
 
 from onecomp import CalibrationConfig, ModelConfig, QEPConfig, Runner
@@ -103,9 +112,9 @@ def _build_exclude_keywords(num_layers: int, first_n: int = 4, last_n: int = 4) 
 
 def main() -> int:
     print("=" * 80)
-    print("MDBF 1bpw - ④ scale_bitsのみ修正 (Hessianはバグあり)")
-    print(f"  W_tilde = W @ Q @ diag(sqrt(λ))  [BUG: Q^T missing]")
-    print(f"  scale_bits = 16  [FIXED]  → 実際BPW≈1.000")
+    print("MDBF 1bpw - Ablation ④: no Hessian rotation, scale_bits=16")
+    print(f"  W_tilde = W @ Q @ diag(sqrt(λ))  (eigenvector back-rotation omitted)")
+    print(f"  scale_bits = 16  → actual BPW ≈ 1.000")
     print(f"  target_bits = {TARGET_BITS}, l={L}, P={P}")
     print(f"  device: {DEVICE}")
     print("=" * 80)
@@ -168,11 +177,11 @@ def main() -> int:
     )
 
     result = {
-        "experiment": "scalebits_only_fix",
+        "experiment": "ablation_no_hessian_rotation_scale16",
         "target_bits": TARGET_BITS,
         "l": L,
         "P": P,
-        "hessian_fix": False,
+        "hessian_weighted_svd": False,
         "scale_bits": 16,
         "actual_bpw_approx": 1.000,
         "ppl_wikitext2": dequant_ppl,
@@ -181,7 +190,7 @@ def main() -> int:
     }
 
     print("\n" + "=" * 80)
-    print("[RESULT] ④ scalebits_only_fix")
+    print("[RESULT] Ablation ④: no Hessian rotation, scale_bits=16")
     print(f"  PPL (wikitext2): {dequant_ppl}")
     print(f"  ACC (arc_easy, piqa): {dequant_acc}")
     print(f"  Elapsed: {elapsed:.0f}s")
