@@ -58,3 +58,10 @@ dashboard/frontend/package-lock.json
 
 # vLLM / worker logs written under /tmp by setup-hpc.md
 *.log
+
+# Large quantized-model dumps produced by example/ scripts (GB-scale pickles).
+# Keep small results_*.json summaries under version control as before, but
+# never commit the raw model pickles or ad-hoc eval/PTQ caches.
+*.pkl
+example/*_cache.json
+example/paper_t2_*.json
