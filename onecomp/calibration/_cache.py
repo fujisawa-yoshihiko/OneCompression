@@ -54,19 +54,18 @@ def load_or_prepare(
                 )
 
     logger.info("Downloading %s from Hugging Face Hub ...", hf_id)
+    kwargs.setdefault("download_mode", "reuse_cache_if_exists")
     if data_files is not None:
         ds = datasets.load_dataset(
             hf_id,
             subset,
             data_files=data_files,
-            trust_remote_code=True,
             **kwargs,
         )
     else:
         ds = datasets.load_dataset(
             hf_id,
             subset,
-            trust_remote_code=True,
             **kwargs,
         )
 

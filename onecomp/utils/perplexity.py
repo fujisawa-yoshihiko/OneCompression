@@ -30,8 +30,8 @@ References:
 
 """
 
-import torch
 from datasets import load_dataset
+import torch
 from tqdm import tqdm
 
 from .model_inputs import add_model_specific_inputs
@@ -109,27 +109,65 @@ def calculate_perplexity(
     device = next(model.parameters()).device
 
     # Load the dataset.
-    # For C4, dataset_config is treated as data_files.
-    if dataset_name == "allenai/c4":
-        test_dataset = load_dataset(dataset_name, data_files=dataset_config, split=split)
+    # C4: short names (e.g. "en") are HF configs; paths like
+    # "en/c4-train.00001-of-01024.json.gz" are passed as data_files.
+    # PTB: legacy loading scripts are deprecated; use parquet revision.
+    _dl = {"download_mode": "reuse_cache_if_exists"}
+    if dataset_name == "allenai/c4" and (
+        "/" in dataset_config
+        and (
+            dataset_config.endswith((".json", ".json.gz", ".gz"))
+            or "c4-" in dataset_config.split("/")[-1]
+        )
+    ):
+        try:
+            test_dataset = load_dataset(
+                dataset_name, data_files=dataset_config, split=split, **_dl,
+            )
+        except (ValueError, FileNotFoundError, OSError):
+            # Offline fallback: load from HF hub snapshot cache.
+            import os
+            from pathlib import Path
+
+            hub = Path(os.environ.get("HF_HUB_CACHE", ""))
+            if not hub.is_dir():
+                hub = Path(os.environ.get("HF_HOME", "~/.cache/huggingface")) / "hub"
+            local = None
+            snap_root = hub / "datasets--allenai--c4" / "snapshots"
+            if snap_root.is_dir():
+                for snap in sorted(snap_root.iterdir(), reverse=True):
+                    candidate = snap / dataset_config
+                    if candidate.is_file():
+                        local = candidate
+                        break
+            if local is None:
+                raise
+            test_dataset = load_dataset("json", data_files=str(local), split=split)
+    elif dataset_name in ("ptb_text_only", "ptb-text-only/ptb_text_only"):
+        # Legacy un-namespaced ID is rejected by recent huggingface_hub;
+        # load the namespaced parquet conversion instead.
+        test_dataset = load_dataset(
+            "ptb-text-only/ptb_text_only",
+            split=split,
+            revision="refs/convert/parquet",
+            **_dl,
+        )
     else:
-        test_dataset = load_dataset(dataset_name, dataset_config, split=split)
+        test_dataset = load_dataset(dataset_name, dataset_config, split=split, **_dl)
+
+    text_col = "text" if "text" in test_dataset.column_names else "sentence"
 
     # Limit the number of samples
     if max_samples is not None:
         test_dataset = test_dataset.select(range(min(max_samples, len(test_dataset))))
     # Concatenate texts
-    encodings = tokenizer("\n\n".join(test_dataset["text"]), return_tensors="pt")
+    encodings = tokenizer("\n\n".join(test_dataset[text_col]), return_tensors="pt")
     if max_length is None:
         max_length = model.config.max_position_embeddings
     if stride is None:
         stride = max_length
     seq_len = encodings.input_ids.size(1)
-    use_cpu_accum = (
-        device.type == "mps" if isinstance(device, torch.device) else str(device).startswith("mps")
-    )
-    accum_device = torch.device("cpu") if use_cpu_accum else device
-    nll_sum = torch.tensor(0.0, dtype=torch.float64, device=accum_device)
+    nll_sum = torch.tensor(0.0, dtype=torch.float64, device=device)
     n_tokens = 0
     prev_end_loc = 0
     for begin_loc in tqdm(range(0, seq_len, stride)):
@@ -148,7 +186,7 @@ def calculate_perplexity(
             # N.B. the model only calculates loss over trg_len - 1 labels,
             # because it internally shifts the labels
             # to the left by 1.
-            neg_log_likelihood = outputs.loss.to(accum_device).to(torch.float64)
+            neg_log_likelihood = outputs.loss.to(torch.float64)
         # Accumulate the total negative log-likelihood and the total number of tokens
         num_valid_tokens = (
             (target_ids != -100).sum().item()
