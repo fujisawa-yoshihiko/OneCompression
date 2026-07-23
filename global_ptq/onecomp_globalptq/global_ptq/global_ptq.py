@@ -24,7 +24,7 @@ Authors: Yoshiyuki Ishii, Keiji Kimura, Yuma Ichikawa
 
 from dataclasses import dataclass
 from logging import getLogger
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import torch.nn as nn
 
@@ -76,12 +76,19 @@ class GlobalPTQ(PostQuantizationProcess):
         ste_k (float):
             Smoothness parameter for GPTQ integer-weight Smooth STE
             rounding.  Only used when ``gptq_optimize_intweight=True``.
-            DBF binary STE uses a fixed internal sharpness (k=2).
             Default is 100.0.
-        calibration_dataset (list or None):
-            List of text strings to use as calibration data.
-            If ``None`` (default), the AllenAI C4 dataset is
-            downloaded automatically.
+        mdbf_ste_k (float):
+            Sharpness for MDBF binary sign STE (``tanh(k*x)`` backward).
+            Default is 2.0.
+        calibration_dataset (str, list, or None):
+            Dataset to use for calibration.  Accepts:
+
+            * ``None`` (default) – AllenAI C4 is used automatically.
+            * ``str`` – A dataset name (``"c4"``, ``"wikitext2"``),
+              a local file path, or any HuggingFace Hub dataset ID
+              (e.g. ``"tatsu-lab/alpaca"``, ``"HuggingFaceFW/fineweb"``).
+            * ``list[str]`` – Pre-loaded text strings.  Useful for
+              proprietary or in-memory data.
         num_calibration_samples (int):
             Number of calibration samples.  Default is 128.
         max_length (int):
@@ -159,6 +166,26 @@ class GlobalPTQ(PostQuantizationProcess):
             optimiser update.  Default is 1 (no accumulation).
             Incompatible with ``use_sam=True``; when both are set,
             this value is silently forced to 1.
+        cd_interval (int):
+            When > 0, run coordinate descent (CD) verification every
+            N optimizer steps.  STE-suggested bit flips are accepted
+            only if they reduce the actual loss.  Requires
+            ``optimize_binary=True`` for DBF/MDBF.  0 disables CD
+            (default: 0).
+        cd_k (int):
+            Maximum flip candidates per binary matrix per CD step.
+            Default is 50.
+        cd_fallback (int):
+            After a bulk flip is rejected, try this many individual
+            flips from the top candidates.  Default is 10.
+        ste_move_interval (int):
+            When ``cd_interval=0`` and ``optimize_binary=True``, run
+            double_binary-style ``move()`` every N optimizer steps on
+            MDBF sign matrices.  0 disables (legacy: write-back at eval).
+            Default is 0.
+        ste_move_pv_frac (float):
+            Percentile threshold for STE move (same as double_binary
+            ``PV_FRAC``).  Default is 0.9999.
 
     Examples:
         >>> from onecomp import Runner, ModelConfig, GPTQ
@@ -184,7 +211,8 @@ class GlobalPTQ(PostQuantizationProcess):
     dbf_lr: float = 5e-5
     optimize_binary: bool = False
     ste_k: float = 100.0
-    calibration_dataset: Optional[List[str]] = None
+    mdbf_ste_k: float = 2.0
+    calibration_dataset: Optional[Union[str, List[str]]] = None
     num_calibration_samples: int = 128
     max_length: int = 2048
     calibration_strategy: str = "drop_rand"
@@ -236,6 +264,23 @@ class GlobalPTQ(PostQuantizationProcess):
     # --- Gradient Accumulation ---
     grad_accum_steps: int = 1
 
+    # --- Coordinate Descent verification (Hybrid STE+CD) ---
+    cd_interval: int = 0
+    cd_k: int = 50
+    cd_fallback: int = 10
+    cd_version: int = 1
+    cd_k_ratio: float = 0.005
+    cd_score_temperature: float = 1.0
+    cd_min_group: int = 16
+    cd_num_eval_batches: int = 3
+    cd_max_forward_calls: int = 60
+    ste_move_interval: int = 0
+    ste_move_pv_frac: float = 0.9999
+
+    # --- Device placement (multi-GPU / CPU teacher) ---
+    student_device: Optional[str] = None
+    teacher_device: Optional[str] = None
+
     def __post_init__(self):
         super().__post_init__()
         if self.epochs < 1:
@@ -286,6 +331,7 @@ class GlobalPTQ(PostQuantizationProcess):
             gptq_intweight_lr=self.gptq_intweight_lr,
             optimize_binary=self.optimize_binary,
             ste_k=self.ste_k,
+            mdbf_ste_k=self.mdbf_ste_k,
             calibration_dataset=self.calibration_dataset,
             num_calibration_samples=self.num_calibration_samples,
             max_length=self.max_length,
@@ -315,6 +361,19 @@ class GlobalPTQ(PostQuantizationProcess):
             early_stopping_patience=self.early_stopping_patience,
             use_mixed_precision=self.use_mixed_precision,
             grad_accum_steps=self.grad_accum_steps,
+            cd_interval=self.cd_interval,
+            cd_k=self.cd_k,
+            cd_fallback=self.cd_fallback,
+            cd_version=self.cd_version,
+            cd_k_ratio=self.cd_k_ratio,
+            cd_score_temperature=self.cd_score_temperature,
+            cd_min_group=self.cd_min_group,
+            cd_num_eval_batches=self.cd_num_eval_batches,
+            cd_max_forward_calls=self.cd_max_forward_calls,
+            ste_move_interval=self.ste_move_interval,
+            ste_move_pv_frac=self.ste_move_pv_frac,
+            student_device=self.student_device,
+            teacher_device=self.teacher_device,
         )
 
         except Exception:

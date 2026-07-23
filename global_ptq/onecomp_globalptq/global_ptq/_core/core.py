@@ -54,6 +54,18 @@ from .dbf_adapter import (
     write_back_dbf_binary,
     write_back_dbf_scaling,
 )
+from .mdbf_adapter import (
+    load_mdbf_state,
+    restore_mdbf_original,
+    save_mdbf_state,
+    setup_mdbf_differentiable,
+    setup_mdbf_forwards_only,
+    write_back_mdbf_amp,
+    write_back_mdbf_binary,
+    move_mdbf_binary,
+)
+from .cd_verify import cd_verify_step
+from .cd_verify_v2 import cd_verify_step_v2
 
 logger = getLogger(__name__)
 
@@ -419,16 +431,32 @@ def cosine_warmup_lr_lambda(
 
 
 @torch.no_grad()
+def _teacher_logits(
+    teacher_model: nn.Module,
+    input_ids: torch.Tensor,
+    teacher_dev: torch.device,
+    student_dev: torch.device,
+) -> torch.Tensor:
+    """Run teacher forward; move logits to *student_dev* if devices differ."""
+    if teacher_dev == student_dev:
+        return get_logits(teacher_model(input_ids))
+    logits_t = get_logits(teacher_model(input_ids.to(teacher_dev)))
+    return logits_t.to(student_dev)
+
+
+@torch.no_grad()
 def eval_kl(
     model: nn.Module,
     teacher_model: nn.Module,
     dataloader: List[Dict[str, torch.Tensor]],
     dev: torch.device,
     temperature: float = 1.0,
+    teacher_dev: Optional[torch.device] = None,
 ) -> float:
     """Mean KL divergence over *dataloader* batches."""
     was_training = model.training
     model.eval()
+    teacher_dev = teacher_dev or dev
     total, n = 0.0, 0
     for batch in dataloader:
         input_ids = batch["input_ids"].to(dev)
@@ -437,7 +465,7 @@ def eval_kl(
             attention_mask = attention_mask.to(dev)
 
         logits_s = get_logits(model(input_ids))
-        logits_t = get_logits(teacher_model(input_ids))
+        logits_t = _teacher_logits(teacher_model, input_ids, teacher_dev, dev)
         total += compute_kl_loss(
             logits_t, logits_s, temperature, attention_mask=attention_mask,
         ).item()
@@ -524,25 +552,49 @@ def _prepare_dataloader(
 
     Each element is a dict with ``input_ids`` and ``attention_mask``
     tensors on CPU.
+
+    ``calibration_dataset`` accepts:
+    * ``None`` or ``str`` – forwarded to ``CalibrationConfig`` (c4, wikitext2,
+      local path, or any HF Hub dataset ID).
+    * ``list[str]`` – pre-loaded text strings; uses ``prepare_from_texts``
+      directly without going through ``CalibrationConfig``.
     """
     from onecomp import CalibrationConfig
     from onecomp.calibration import prepare_calibration_dataset
+    from onecomp.utils.model_inputs import add_model_specific_inputs
 
     tokenizer = model_config.load_tokenizer()
-    calib_config = CalibrationConfig(
-        calibration_dataset=calibration_dataset or "c4",
-        max_length=max_length,
-        num_calibration_samples=num_samples,
-        strategy=strategy,
-        seed=seed,
-    )
-    cal = prepare_calibration_dataset(
-        tokenizer=tokenizer,
-        device="cpu",
-        calibration_config=calib_config,
-        model=model,
-        logger=logger,
-    )
+
+    if isinstance(calibration_dataset, list):
+        from onecomp.calibration.chunking import prepare_from_texts
+        cal = add_model_specific_inputs(
+            prepare_from_texts(
+                calibration_dataset,
+                tokenizer,
+                "cpu",
+                max_length,
+                num_samples,
+                strategy,
+                seed,
+                logger,
+            ),
+            model,
+        )
+    else:
+        calib_config = CalibrationConfig(
+            calibration_dataset=calibration_dataset or "c4",
+            max_length=max_length,
+            num_calibration_samples=num_samples,
+            strategy=strategy,
+            seed=seed,
+        )
+        cal = prepare_calibration_dataset(
+            tokenizer=tokenizer,
+            device="cpu",
+            calibration_config=calib_config,
+            model=model,
+            logger=logger,
+        )
     input_ids = cal["input_ids"]
     attention_mask = cal.get("attention_mask")
 
@@ -587,6 +639,7 @@ def run_kl_distillation(
     gptq_intweight_lr: float = 1e-4,
     optimize_binary: bool = False,
     ste_k: float = 100.0,
+    mdbf_ste_k: float = 2.0,
     calibration_dataset=None,
     num_calibration_samples: int = 128,
     max_length: int = 2048,
@@ -616,12 +669,28 @@ def run_kl_distillation(
     early_stopping_patience: int = 0,
     use_mixed_precision: bool = False,
     grad_accum_steps: int = 1,
+    cd_interval: int = 0,
+    cd_k: int = 50,
+    cd_fallback: int = 10,
+    cd_version: int = 1,
+    cd_k_ratio: float = 0.005,
+    cd_score_temperature: float = 1.0,
+    cd_min_group: int = 16,
+    cd_num_eval_batches: int = 3,
+    cd_max_forward_calls: int = 60,
+    ste_move_interval: int = 0,
+    ste_move_pv_frac: float = 0.9999,
+    student_device: Optional[str] = None,
+    teacher_device: Optional[str] = None,
 ) -> Dict:
     """Run KL-distillation global PTQ on a GPTQ or DBF quantized model.
 
     The model is modified **in-place**.  Returns a results dict.
     """
-    dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    dev = torch.device(
+        student_device or ("cuda" if torch.cuda.is_available() else "cpu")
+    )
+    teacher_dev = torch.device(teacher_device) if teacher_device else dev
 
     # ------------------------------------------------------------------
     # 1. Detect method
@@ -631,7 +700,7 @@ def run_kl_distillation(
         logger.warning("No quantized layers detected — skipping global PTQ.")
         return {"global_executed": False, "reason": "not_quantized"}
 
-    if method not in ("gptq", "dbf"):
+    if method not in ("gptq", "dbf", "mdbf"):
         logger.info("Method '%s' detected — not supported.", method)
         return {"global_executed": False, "reason": f"unsupported_method_{method}"}
 
@@ -665,7 +734,8 @@ def run_kl_distillation(
     teacher_model.eval()
     for p in teacher_model.parameters():
         p.requires_grad = False
-    teacher_model.to(dev)
+    if teacher_dev.type != "cpu":
+        teacher_model.to(teacher_dev)
 
     # ------------------------------------------------------------------
     # 4. Move student to GPU and set up differentiable parameters
@@ -675,6 +745,7 @@ def run_kl_distillation(
 
     gptq_modules: list = []
     dbf_modules: list = []
+    mdbf_modules: list = []
     original_forwards: Dict[str, object] = {}
     param_groups: list = []
     binary_params: list = []
@@ -710,6 +781,24 @@ def run_kl_distillation(
             f", {len(binary_params)} binary" if binary_params else "",
         )
 
+    elif method == "mdbf":
+        mdbf_modules = detected_modules
+        original_forwards, scaling_params, binary_params = setup_mdbf_differentiable(
+            mdbf_modules, optimize_binary, ste_k=mdbf_ste_k,
+        )
+        logger.info("MDBF binary STE sharpness mdbf_ste_k=%.4g", mdbf_ste_k)
+        all_mdbf_params = list(scaling_params)
+        if binary_params:
+            all_mdbf_params += binary_params
+        param_groups = [{"params": all_mdbf_params, "lr": dbf_lr}]
+
+        logger.info(
+            "Trainable: %d amp params%s across %d MDBF modules",
+            len(scaling_params),
+            f", {len(binary_params)} binary" if binary_params else "",
+            len(mdbf_modules),
+        )
+
     total_trainable = sum(len(pg["params"]) for pg in param_groups)
     if total_trainable == 0:
         logger.warning("No trainable parameters — skipping.")
@@ -717,6 +806,8 @@ def run_kl_distillation(
             restore_gptq_original(gptq_modules, original_forwards)
         elif method == "dbf":
             restore_dbf_original(dbf_modules, original_forwards)
+        elif method == "mdbf":
+            restore_mdbf_original(mdbf_modules, original_forwards)
         quantized_model.cpu()
         del teacher_model
         gc.collect()
@@ -871,17 +962,24 @@ def run_kl_distillation(
     if method == "gptq":
         initial_state = save_gptq_state(gptq_modules)
         restore_gptq_original(gptq_modules, original_forwards)
-    else:
+    elif method == "dbf":
         initial_state = save_dbf_state(dbf_modules)
         restore_dbf_original(dbf_modules, original_forwards)
+    else:  # mdbf
+        initial_state = save_mdbf_state(mdbf_modules)
+        restore_mdbf_original(mdbf_modules, original_forwards)
 
-    initial_kl = eval_kl(quantized_model, teacher_model, dataloader, dev, temperature)
+    initial_kl = eval_kl(
+        quantized_model, teacher_model, dataloader, dev, temperature, teacher_dev,
+    )
     logger.info("Initial KL = %.6f", initial_kl)
 
     if method == "gptq":
         setup_gptq_forwards_only(gptq_modules, original_forwards, gptq_optimize_intweight)
     elif method == "dbf":
         setup_dbf_forwards_only(dbf_modules, original_forwards)
+    elif method == "mdbf":
+        setup_mdbf_forwards_only(mdbf_modules, original_forwards)
 
     # ------------------------------------------------------------------
     # 7. Training loop
@@ -928,8 +1026,9 @@ def run_kl_distillation(
 
                 with amp_ctx:
                     logits_s = get_logits(quantized_model(input_ids))
-                    with torch.no_grad():
-                        logits_t = get_logits(teacher_model(input_ids))
+                    logits_t = _teacher_logits(
+                        teacher_model, input_ids, teacher_dev, dev,
+                    )
 
                 kl = compute_kl_loss(
                     logits_t, logits_s, temperature, attention_mask=attention_mask,
@@ -1028,6 +1127,83 @@ def run_kl_distillation(
                     optimizer.zero_grad()
                     n_accum_steps = 0
 
+            # CD verify step (Hybrid STE+CD)
+            if (
+                cd_interval > 0
+                and is_accum_boundary
+                and method in ("dbf", "mdbf")
+                and optimize_binary
+                and (batch_idx + 1) % cd_interval == 0
+            ):
+                cd_batch = {
+                    "input_ids": input_ids,
+                }
+                if attention_mask is not None:
+                    cd_batch["attention_mask"] = attention_mask
+
+                if cd_version >= 2 and method == "mdbf":
+                    eval_batches = [cd_batch]
+                    remaining = cd_num_eval_batches - 1
+                    if remaining > 0:
+                        dl_iter = iter(dataloader)
+                        for _ in range(remaining):
+                            try:
+                                extra = next(dl_iter)
+                                eb = {"input_ids": extra["input_ids"].to(dev)}
+                                if extra.get("attention_mask") is not None:
+                                    eb["attention_mask"] = extra["attention_mask"].to(dev)
+                                eval_batches.append(eb)
+                            except StopIteration:
+                                break
+                    cd_acc, cd_tried = cd_verify_step_v2(
+                        quantized_model,
+                        eval_batches,
+                        mdbf_modules=mdbf_modules,
+                        device=dev,
+                        cd_k=cd_k,
+                        k_ratio=cd_k_ratio,
+                        score_temperature=cd_score_temperature,
+                        min_group=cd_min_group,
+                        max_forward_calls=cd_max_forward_calls,
+                        temperature=temperature,
+                        teacher_model=teacher_model,
+                        teacher_device=teacher_dev,
+                    )
+                else:
+                    cd_acc, cd_tried = cd_verify_step(
+                        quantized_model,
+                        cd_batch,
+                        method=method,
+                        dbf_modules=dbf_modules,
+                        mdbf_modules=mdbf_modules,
+                        device=dev,
+                        cd_k=cd_k,
+                        cd_fallback=cd_fallback,
+                        temperature=temperature,
+                        teacher_model=teacher_model,
+                        teacher_device=teacher_dev,
+                    )
+                if cd_tried > 0:
+                    logger.debug(
+                        "CD step %d: accepted %d/%d flips",
+                        batch_idx + 1, cd_acc, cd_tried,
+                    )
+                quantized_model.train()
+
+            # STE move step (double_binary move() equivalent for MDBF)
+            if (
+                cd_interval == 0
+                and ste_move_interval > 0
+                and is_accum_boundary
+                and method == "mdbf"
+                and optimize_binary
+                and (batch_idx + 1) % ste_move_interval == 0
+            ):
+                n_moved = move_mdbf_binary(mdbf_modules, pv_frac=ste_move_pv_frac)
+                if n_moved > 0:
+                    logger.debug("STE move step %d: flipped %d bits", batch_idx + 1, n_moved)
+                quantized_model.train()
+
             # EMA update (only at accumulation boundaries)
             if ema_tracker is not None and is_accum_boundary:
                 ema_tracker.update(all_opt_params)
@@ -1052,16 +1228,25 @@ def run_kl_distillation(
             elif method == "dbf":
                 write_back_dbf_binary(dbf_modules)
                 restore_dbf_original(dbf_modules, original_forwards)
+            elif method == "mdbf":
+                if cd_interval == 0 and ste_move_interval == 0:
+                    write_back_mdbf_binary(mdbf_modules)
+                write_back_mdbf_amp(mdbf_modules)
+                restore_mdbf_original(mdbf_modules, original_forwards)
 
-            current_kl = eval_kl(quantized_model, teacher_model, dataloader, dev, temperature)
+            current_kl = eval_kl(
+                quantized_model, teacher_model, dataloader, dev, temperature, teacher_dev,
+            )
 
             if current_kl < best_kl:
                 best_kl = current_kl
                 patience_counter = 0
                 if method == "gptq":
                     best_state = save_gptq_state(gptq_modules)
-                else:
+                elif method == "dbf":
                     best_state = save_dbf_state(dbf_modules)
+                else:  # mdbf
+                    best_state = save_mdbf_state(mdbf_modules)
             else:
                 patience_counter += 1
 
@@ -1069,6 +1254,8 @@ def run_kl_distillation(
                 setup_gptq_forwards_only(gptq_modules, original_forwards, gptq_optimize_intweight)
             elif method == "dbf":
                 setup_dbf_forwards_only(dbf_modules, original_forwards)
+            elif method == "mdbf":
+                setup_mdbf_forwards_only(mdbf_modules, original_forwards)
 
             # Restore non-EMA params for continued training
             if ema_tracker is not None:
@@ -1103,15 +1290,19 @@ def run_kl_distillation(
     if best_state is not None and best_kl < initial_kl:
         if method == "gptq":
             load_gptq_state(gptq_modules, best_state)
-        else:
+        elif method == "dbf":
             load_dbf_state(dbf_modules, best_state)
+        else:  # mdbf
+            load_mdbf_state(mdbf_modules, best_state)
         logger.info("Loaded best state (KL=%.6f)", best_kl)
     elif best_kl >= initial_kl:
         logger.info("No improvement — rolling back to initial state.")
         if method == "gptq":
             load_gptq_state(gptq_modules, initial_state)
-        else:
+        elif method == "dbf":
             load_dbf_state(dbf_modules, initial_state)
+        else:  # mdbf
+            load_mdbf_state(mdbf_modules, initial_state)
         best_kl = initial_kl
     else:
         if method == "gptq":
@@ -1119,11 +1310,17 @@ def run_kl_distillation(
         elif method == "dbf":
             write_back_dbf_binary(dbf_modules)
             write_back_dbf_scaling(dbf_modules)
+        elif method == "mdbf":
+            if cd_interval == 0 and ste_move_interval == 0:
+                write_back_mdbf_binary(mdbf_modules)
+            write_back_mdbf_amp(mdbf_modules)
 
     if method == "gptq":
         restore_gptq_original(gptq_modules, original_forwards, cleanup=False)
     elif method == "dbf":
         restore_dbf_original(dbf_modules, original_forwards, cleanup=False)
+    elif method == "mdbf":
+        restore_mdbf_original(mdbf_modules, original_forwards, cleanup=False)
 
     # Cleanup hooks
     if use_inter_loss:
@@ -1140,7 +1337,9 @@ def run_kl_distillation(
 
     # Final evaluation
     quantized_model.eval()
-    final_kl = eval_kl(quantized_model, teacher_model, dataloader, dev, temperature)
+    final_kl = eval_kl(
+        quantized_model, teacher_model, dataloader, dev, temperature, teacher_dev,
+    )
 
     # Cleanup
     if method == "gptq":
@@ -1148,6 +1347,8 @@ def run_kl_distillation(
         restore_gptq_original(gptq_modules, original_forwards, cleanup=True)
     elif method == "dbf":
         restore_dbf_original(dbf_modules, original_forwards, cleanup=True)
+    elif method == "mdbf":
+        restore_mdbf_original(mdbf_modules, original_forwards, cleanup=True)
     
     del teacher_model
     gc.collect()
