@@ -37,15 +37,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .helpers import layer_kwargs_to_device
+from .._ste import smooth_sign_ste as _smooth_sign_ste
 
 logger = getLogger(__name__)
-
-
-def _smooth_sign_ste(x: torch.Tensor, k: float = 100.0) -> torch.Tensor:
-    """SmoothSign STE: forward=sign(x), backward=d/dx tanh(kx)."""
-    y = x.sign()
-    y[y == 0] = 1
-    return y.detach() - x.detach() + torch.tanh(k * x)
 
 
 def _find_onebit_modules(layer: nn.Module) -> List[Tuple[str, nn.Module]]:

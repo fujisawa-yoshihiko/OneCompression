@@ -14,6 +14,11 @@ from .post_process_lora_sft import (
     PostProcessLoraTeacherOnlySFT,
     PostProcessLoraTeacherSFT,
 )
+from .post_process_lordba import (
+    LoRDBALinear,
+    PostProcessLoRDBA,
+    TrainableDBFAdapter,
+)
 
 __all__ = [
     "PostQuantizationProcess",
@@ -21,4 +26,7 @@ __all__ = [
     "PostProcessLoraSFT",
     "PostProcessLoraTeacherOnlySFT",
     "PostProcessLoraTeacherSFT",
+    "PostProcessLoRDBA",
+    "LoRDBALinear",
+    "TrainableDBFAdapter",
 ]
